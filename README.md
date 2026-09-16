@@ -4,165 +4,101 @@ PC上で動作する、カメラ映像を利用したリアルタイム人物・
 
 Raspberry Pi版の Mr. Variable Picker をPC向けに発展させ、DeepFaceを利用して顔画像から年齢・性別・表情を推定します。
 
-> **特徴：モデルファイルをリポジトリへ直接含める必要はありません。**
-> DeepFaceが初回起動時に必要な学習済みモデルを自動ダウンロードします。
+## 特徴
 
-## 概要
+- Webカメラだけで動作
+- OpenCVに同梱されているHaar Cascadeを使用するため、顔検出モデルを別途配置する必要なし
+- DeepFaceの学習済みモデルは初回起動時に自動ダウンロード
+- 人物をID単位で追跡
+- 年齢・性別・表情を複数回推定して安定化
+- 人物ごとの滞在時間をCSVへ記録
 
-カメラ映像から顔を検出し、人物ごとにIDを付与して追跡します。
-
-追跡した人物に対して一定間隔でDeepFaceによる属性推定を行い、複数回の推定結果を蓄積します。人物が画面から離れた時点で、それまでの結果を集約してCSVへ保存します。
+## 処理フロー
 
 ~~~text
 カメラ映像
    ↓
-顔検出（OpenCV Haar Cascade）
+OpenCV Haar Cascade
    ↓
-人物追跡（Centroid Tracker）
+Centroid Tracker
    ↓
-DeepFaceによる属性推定
+人物IDを付与
+   ↓
+DeepFace
    ├─ 年齢
    ├─ 性別
    └─ 表情
    ↓
-複数フレームの推定結果を蓄積
+複数回の推定結果を蓄積
    ↓
-人物単位で属性を安定化
+代表値を算出
    ↓
 滞在時間を計算
    ↓
-CSVへ出力
+CSVへ保存
 ~~~
 
-## 主な機能
+## 必要環境
 
-- Webカメラからのリアルタイム映像取得
-- OpenCVによる顔検出
-- Centroid Trackerによる人物ID追跡
-- DeepFaceによる年齢推定
-- DeepFaceによる性別推定
-- DeepFaceによる表情推定
-- 複数フレームの推定結果を利用した属性の安定化
-  - 年齢：中央値
-  - 性別：最頻値
-  - 表情：最頻値
-- 人物ごとの滞在時間計測
-- 滞在時間2秒以上を stay、2秒未満を pass として分類
-- 分析結果のCSV保存
+- Python 3.9〜3.11程度を推奨
+- Webカメラ
+- Windows / macOS / Linux
 
-## Raspberry Pi版との違い
+## 最短セットアップ
 
-このPC版では、属性推定に **OpenVINOの直接推論ではなくDeepFace** を使用しています。
+### 1. クローン
 
-DeepFaceを利用することで、顔画像から年齢・性別・表情などをまとめて推定できます。
+~~~bash
+git clone https://github.com/hiromu2001/Mr.-Variable-Picker-PC-.git
+cd Mr.-Variable-Picker-PC-
+~~~
 
-また、DeepFaceのモデル管理機能により、モデルファイルをGitリポジトリへ直接コミットせず、初回起動時に必要なモデルを取得する構成にしています。
+### 2. ライブラリをインストール
 
-## 使用技術
+~~~bash
+pip install -r requirements.txt
+~~~
 
-| 技術 | 用途 |
-|---|---|
-| Python | アプリケーション実装 |
-| OpenCV | カメラ入力・顔検出・映像処理 |
-| DeepFace | 年齢・性別・表情推定 |
-| NumPy | 数値計算・属性の安定化 |
-| SciPy | 人物追跡の距離計算 |
-| CSV | 分析結果の保存 |
+### 3. 起動
 
-## ディレクトリ構成
+~~~bash
+python main.py
+~~~
+
+**これだけで起動できます。**
+
+追加の顔検出モデルを手動でダウンロードしたり、modelsフォルダへファイルを配置したりする必要はありません。
+
+## 初回起動について
+
+初回起動時にはDeepFaceが必要な学習済みモデルを自動的にダウンロードします。
 
 ~~~text
-Mr.-Variable-Picker-PC-/
-├── main.py
-├── tracker.py
-├── analytics.py
-├── models/
-│   └── haarcascade_frontalface_default.xml
-└── logs/
-    └── analytics_YYYYMMDD_HHMM.csv
+python main.py
+       ↓
+DeepFaceがモデルを確認
+       ↓
+未取得なら自動ダウンロード
+       ↓
+ローカルへキャッシュ
+       ↓
+顔分析開始
 ~~~
 
-※ DeepFaceが使用する学習済みモデルは通常リポジトリ内には配置しません。初回実行時にDeepFace側でダウンロードされます。
+初回だけモデルのダウンロードに時間がかかる場合があります。
 
-## 各ファイルの役割
+2回目以降はローカルにキャッシュされたモデルが利用されます。
 
-### main.py
+## 出力
 
-アプリケーションのエントリーポイントです。
-
-カメラからフレームを取得し、
-
-1. 顔検出
-2. 人物追跡
-3. DeepFaceによる属性推定
-4. 属性の安定化
-5. 映像への結果表示
-6. CSVへの記録
-
-までを制御します。
-
-DeepFaceによる推論は毎フレームではなく、人物IDとフレームカウンターを利用して一定間隔で実行することで、計算量を抑えています。
-
-### tracker.py
-
-Centroid Trackerを実装しています。
-
-顔検出によって得られた矩形の中心座標を計算し、前フレームとのユークリッド距離を利用して人物IDを維持します。
-
-最大30フレームまで人物が一時的に検出されなくてもIDを保持します。
-
-### analytics.py
-
-人物ごとの属性推定結果を蓄積・集約します。
-
-追跡中の複数回の推定結果から代表値を計算し、人物の追跡終了時にCSVへ出力します。
-
-## 属性の安定化
-
-リアルタイム映像では、同じ人物を分析していてもフレームごとに推定値が変化することがあります。
-
-そこで、単一フレームの結果をそのまま利用せず、複数回の推定結果を蓄積します。
-
-### 年齢
-
-外れ値の影響を抑えるため、中央値を使用します。
+人物の追跡が終了すると、logs/ にCSVが保存されます。
 
 ~~~text
-age = median(推定された年齢)
+logs/
+└── analytics_YYYYMMDD_HHMM.csv
 ~~~
 
-### 性別
-
-最も多く推定された性別を代表値として使用します。
-
-~~~text
-gender = mode(推定された性別)
-~~~
-
-### 表情
-
-最も多く推定された表情を代表値として使用します。
-
-~~~text
-expression = mode(推定された表情)
-~~~
-
-このように、**単発のAI推論結果をそのまま分析データとして扱わず、時系列データとして集約する**設計にしています。
-
-## 滞在判定
-
-人物が最初に分析された時刻と最後に分析された時刻から滞在時間を計算します。
-
-~~~text
-滞在時間 >= 2秒 → stay
-滞在時間 <  2秒 → pass
-~~~
-
-閾値は analytics.py の DWELL_THRESHOLD で変更できます。
-
-## 出力データ
-
-logs/ にCSVファイルが作成されます。
+出力項目：
 
 | 項目 | 内容 |
 |---|---|
@@ -173,138 +109,92 @@ logs/ にCSVファイルが作成されます。
 | result | stay / pass |
 | total_dwell_sec | 滞在時間（秒） |
 
-例：
+## 技術的な工夫
 
-~~~csv
-end_timestamp,gender,age_stable,top_expression,result,total_dwell_sec
-2026-01-27 14:30:12,Male,34,neutral,stay,4.82
-2026-01-27 14:30:18,Female,27,happy,pass,0.93
-~~~
+### 人物追跡
 
-## セットアップ
+OpenCVで顔を検出した後、顔の中心座標を利用したCentroid Trackerで人物を追跡します。
 
-### 1. リポジトリを取得
+一時的に顔が検出できなくなっても、最大30フレームまでは同じIDを保持します。
 
-~~~bash
-git clone https://github.com/hiromu2001/Mr.-Variable-Picker-PC-.git
-cd Mr.-Variable-Picker-PC-
-~~~
+### DeepFaceの推論頻度を制御
 
-### 2. Python環境を用意
+DeepFaceは毎フレーム実行すると計算負荷が大きいため、人物IDとフレーム番号を利用して、人物ごとに5フレームに1回の頻度で推論します。
 
-Python 3.9〜3.11程度の環境を推奨します。
+### 推定結果の安定化
 
-仮想環境を利用する場合：
+1回のAI推論結果をそのまま利用せず、人物ごとに複数回の推定結果を蓄積します。
 
-~~~bash
-python -m venv .venv
-~~~
+- 年齢：中央値
+- 性別：最頻値
+- 表情：最頻値
 
-Windows：
+これにより、単一フレームの推定結果の揺れを分析結果にそのまま反映しない構成にしています。
 
-~~~bash
-.venv\Scripts\activate
-~~~
+### 滞在判定
 
-macOS / Linux：
-
-~~~bash
-source .venv/bin/activate
-~~~
-
-### 3. 必要ライブラリをインストール
-
-~~~bash
-pip install opencv-python deepface numpy scipy
-~~~
-
-### 4. モデルについて
-
-**DeepFaceのモデルをGitHubへアップロードする必要はありません。**
-
-DeepFaceは初回の分析実行時に必要なモデルを自動的にダウンロードします。
-
-そのため、初回起動時は通常より時間がかかります。
+人物の分析データから滞在時間を算出します。
 
 ~~~text
-初回起動
-   ↓
-DeepFaceがモデルを確認
-   ↓
-未取得なら自動ダウンロード
-   ↓
-モデルをローカルキャッシュ
-   ↓
-顔分析開始
+滞在時間 >= 2秒 → stay
+滞在時間 <  2秒 → pass
 ~~~
 
-以降はキャッシュされたモデルを利用します。
+閾値は analytics.py の DWELL_THRESHOLD で変更できます。
 
-### 5. Haar Cascadeについて
-
-現在のコードでは models/haarcascade_frontalface_default.xml を参照しています。
-
-このファイルがリポジトリに存在しない場合は、OpenCVに同梱されているHaar Cascadeを利用する方法もあります。
-
-~~~python
-face_cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-~~~
-
-この方式なら、Haar CascadeのXMLファイルをリポジトリへ含める必要もありません。
-
-## 実行
-
-カメラを接続した状態で、
-
-~~~bash
-python main.py
-~~~
-
-を実行します。
-
-カメラ映像に人物ID・年齢・性別・表情が表示されます。
-
-終了する場合は映像ウィンドウ上で q キーを押してください。
-
-## 技術的なポイント
-
-### 1. AI推論と人物追跡を分離
-
-顔検出と属性推定を毎フレーム独立して行うのではなく、
+## ファイル構成
 
 ~~~text
-Face Detection
-      ↓
-Tracking
-      ↓
-Person ID
-      ↓
-Periodic AI Inference
-      ↓
-Time-series Aggregation
+Mr.-Variable-Picker-PC-/
+├── main.py
+├── tracker.py
+├── analytics.py
+├── requirements.txt
+└── logs/
 ~~~
 
-という構造にしています。
+### main.py
 
-これにより、同一人物について複数回得られた推定結果を利用できます。
+カメラ入力、顔検出、人物追跡、DeepFace推論、画面表示を制御します。
 
-### 2. 推論結果を時系列データとして扱う
+### tracker.py
 
-AIの1回の予測結果だけを見るのではなく、
+Centroid Trackerによる人物IDの管理を行います。
 
-~~~text
-Person ID = 12
+### analytics.py
 
-t1 → age 31 / Male / neutral
-t2 → age 34 / Male / neutral
-t3 → age 32 / Male / happy
-t4 → age 35 / Male / neutral
-...
-~~~
+人物ごとの推定結果を蓄積し、代表値・滞在時間を計算してCSVへ出力します。
 
-のように蓄積し、最後に代表値を計算します。
+### requirements.txt
 
-これはリアルタイム画像認識を、そのまま分析データへ変換するための処理です。
+Pythonの依存ライブラリを定義しています。
+
+## 使用技術
+
+| 技術 | 用途 |
+|---|---|
+| Python | アプリケーション実装 |
+| OpenCV | カメラ入力・顔検出・映像処理 |
+| DeepFace | 年齢・性別・表情推定 |
+| NumPy | 数値計算・属性の集約 |
+| SciPy | 人物追跡の距離計算 |
+| CSV | 分析結果の保存 |
+
+## モデルファイルについて
+
+このリポジトリにはDeepFaceの学習済みモデルを含めていません。
+
+これは意図した構成です。
+
+モデルをGitHubへ直接配置するのではなく、DeepFaceにモデル管理を任せることで、
+
+- Gitリポジトリの肥大化を防ぐ
+- モデルファイルを手動配置する必要がない
+- クローン後のセットアップを簡単にする
+
+というメリットがあります。
+
+また、OpenCVのHaar Cascadeについても cv2.data.haarcascades からOpenCV同梱のファイルを参照するため、別途モデルファイルを用意する必要がありません。
 
 ## 今後の改善案
 
@@ -315,7 +205,7 @@ t4 → age 35 / Male / neutral
 - SQLite / PostgreSQLなどへの保存
 - 時間帯・曜日別の分析
 - 属性と滞在時間のクロス集計
-- Streamlitなどを利用した分析ダッシュボード
+- ダッシュボードによる可視化
 - 複数カメラへの対応
 - 匿名化・プライバシー保護を考慮した運用
 
